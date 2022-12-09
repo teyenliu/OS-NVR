@@ -229,9 +229,12 @@ func newApp(envPath string, wg *sync.WaitGroup, hooks *hookList) (*App, error) {
 
 	router.Handle("/api/monitor/list", a.User(web.MonitorList(monitorManager.MonitorsInfo)))
 	router.Handle("/api/monitor/configs", a.Admin(web.MonitorConfigs(monitorManager)))
-	router.Handle("/api/monitor/restart", a.Admin(a.CSRF(web.MonitorRestart(monitorManager))))
-	router.Handle("/api/monitor/set", a.Admin(a.CSRF(web.MonitorSet(monitorManager))))
-	router.Handle("/api/monitor/delete", a.Admin(a.CSRF(web.MonitorDelete(monitorManager))))
+	//router.Handle("/api/monitor/restart", a.Admin(a.CSRF(web.MonitorRestart(monitorManager))))
+	//router.Handle("/api/monitor/set", a.Admin(a.CSRF(web.MonitorSet(monitorManager))))
+	//router.Handle("/api/monitor/delete", a.Admin(a.CSRF(web.MonitorDelete(monitorManager))))
+	router.Handle("/api/monitor/restart", a.Admin(web.MonitorRestart(monitorManager)))
+	router.Handle("/api/monitor/set", a.Admin(web.MonitorSet(monitorManager)))
+	router.Handle("/api/monitor/delete", a.Admin(web.MonitorDelete(monitorManager)))
 
 	router.Handle("/api/group/configs", a.User(web.GroupConfigs(groupManager)))
 	router.Handle("/api/group/set", a.Admin(a.CSRF(web.GroupSet(groupManager))))
