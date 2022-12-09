@@ -111,13 +111,15 @@ func onRecSaved(r *monitor.Recorder, recPath string, recData storage.RecordingDa
 	// Use FPutObject to upload the video mp4 file
 	// upload the video mp4 file
 	contentType := "video/mp4"
+	startStr := recData.Start.Format("2006-01-02T15:04:05.999999999-07:00")
+	endStr := recData.End.Format("2006-01-02T15:04:05.999999999-07:00")
 	n, err := MinioClient.FPutObject(context.Background(),
 		"testbucket",
 		outputPath,
 		inputPath,
 		minio.PutObjectOptions{
-			UserMetadata: map[string]string{"start": recData.Start.String(), "end": recData.End.String()},
-			UserTags:     map[string]string{"start": recData.Start.String(), "end": recData.End.String()},
+			UserMetadata: map[string]string{"start": startStr, "end": endStr, "id": id},
+			UserTags:     map[string]string{"start": startStr, "end": endStr, "id": id},
 			ContentType:  contentType})
 
 	if err != nil {
@@ -125,15 +127,15 @@ func onRecSaved(r *monitor.Recorder, recPath string, recData storage.RecordingDa
 		logf(log.LevelError, err.Error())
 	} else {
 		//Remove files
-		//files, err := filepath.Glob(recPath + ".*")
-		//if err != nil {
-		//	panic(err)
-		//}
-		//for _, f := range files {
-		//	if err := os.Remove(f); err != nil {
-		//  	panic(err)
-		//}
-		//}
+		files, err := filepath.Glob(recPath + ".mp4")
+		if err != nil {
+			panic(err)
+		}
+		for _, f := range files {
+			if err := os.Remove(f); err != nil {
+				panic(err)
+			}
+		}
 		logf(log.LevelInfo, "Successfully uploaded video %v to minio: %v with size: %d",
 			inputPath, outputPath, n.Size)
 	}
