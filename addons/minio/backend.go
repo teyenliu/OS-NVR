@@ -60,12 +60,15 @@ func loadEnv() {
 	} else {
 		MINIOLOCATION = os.Getenv("MINIOLOCATION")
 	}
+
 	if os.Getenv("MINIOEVENTBUCKET") == "" {
 		MINIOEVENTBUCKET = "testbucket"
 	} else {
 		MINIOEVENTBUCKET = os.Getenv("MINIOEVENTBUCKET")
 	}
-	if os.Getenv("MINIOENDPOINT") == "" {
+
+	// MINIOUSESSL Default is false
+	if os.Getenv("MINIOUSESSL") == "" {
 		MINIOUSESSL = false
 	} else {
 		boolValue, err := strconv.ParseBool(os.Getenv("MINIOUSESSL"))
@@ -164,7 +167,8 @@ func ConnectMinio() *minio.Client {
 	}
 
 	// Set custom policy as public rule
-	policy := `{"Version": "2012-10-17","Statement": [{"Action": ["s3:GetObject"],"Effect": "Allow", "Principal": {"AWS": ["*"]},"Resource": ["arn:aws:s3:::*/*"],"Sid": ""}]}`
+	policy := `{"Version": "2012-10-17","Statement": [{"Action": ["s3:GetObject"],"Effect": "Allow", 
+	            "Principal": {"AWS": ["*"]},"Resource": ["arn:aws:s3:::*/*"],"Sid": ""}]}`
 	minioClient.SetBucketPolicy(context.Background(), MINIOEVENTBUCKET, policy)
 
 	return minioClient

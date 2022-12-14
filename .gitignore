@@ -11,4 +11,4 @@
 *.backup
 /.vscode
 
-build*
+bundle*
