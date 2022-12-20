@@ -4,6 +4,7 @@ package minio
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -79,9 +80,25 @@ func loadEnv() {
 	}
 }
 
-func onRecSaved(r *monitor.Recorder, recPath string, recData storage.RecordingData) {
+// Config is a monitor alert config.
+type Config struct {
+	Enable   string `json:"enable"`
+	DelLocal string `json:"dellocal"`
+}
 
+func (c *Config) fillMissing() {
+	if c.Enable == "" {
+		c.Enable = "false"
+	}
+	if c.DelLocal == "" {
+		c.DelLocal = "true"
+	}
+}
+
+func onRecSaved(r *monitor.Recorder, recPath string, recData storage.RecordingData) {
 	id := r.Config.ID()
+	rawConfig := r.Config.Get("minio")
+
 	logf := func(level log.Level, format string, a ...interface{}) {
 		r.Logger.Log(log.Entry{
 			Level:     level,
@@ -89,6 +106,17 @@ func onRecSaved(r *monitor.Recorder, recPath string, recData storage.RecordingDa
 			MonitorID: id,
 			Msg:       fmt.Sprintf(format, a...),
 		})
+	}
+
+	var config Config
+	err := json.Unmarshal([]byte(rawConfig), &config)
+	if err != nil {
+		logf(log.LevelError, "could not unmarshal config: %w", err)
+	}
+
+	config.fillMissing()
+	if config.Enable != "true" {
+		return
 	}
 
 	if MinioClient == nil {
@@ -130,13 +158,15 @@ func onRecSaved(r *monitor.Recorder, recPath string, recData storage.RecordingDa
 		logf(log.LevelError, err.Error())
 	} else {
 		//Remove files
-		files, err := filepath.Glob(recPath + ".mp4")
-		if err != nil {
-			panic(err)
-		}
-		for _, f := range files {
-			if err := os.Remove(f); err != nil {
+		if config.DelLocal == "true" {
+			files, err := filepath.Glob(recPath + ".mp4")
+			if err != nil {
 				panic(err)
+			}
+			for _, f := range files {
+				if err := os.Remove(f); err != nil {
+					panic(err)
+				}
 			}
 		}
 		logf(log.LevelInfo, "Successfully uploaded video %v to minio: %v with size: %d",
