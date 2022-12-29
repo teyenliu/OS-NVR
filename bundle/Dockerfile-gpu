@@ -1,0 +1,82 @@
+#FROM alpine AS release
+#FROM golang:1.18-alpine3.15
+FROM nvidia/cuda:10.2-cudnn7-devel-ubuntu18.04
+
+LABEL maintainer="Danny Liu. mail: danny.liu@itri.org.tw"
+
+RUN rm /etc/apt/sources.list.d/cuda.list
+RUN rm /etc/apt/sources.list.d/nvidia-ml.list
+
+ARG osnvr_version
+
+# ensure local python is preferred over distribution python
+ENV PATH /usr/local/bin:/usr/bin:/usr/local/cuda/bin:/usr/local/ffmpeg/bin:$PATH
+
+# http://bugs.python.org/issue19846
+# > At the moment, setting "LANG=C" on a Linux system *fundamentally breaks Python 3*
+# > and that's kinda not OK
+ENV LANG C.UTF-8
+
+# ensure annoying packages like `tzdata` won't ask a lot of questions
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt update && \
+    apt install -y sed gcc musl-dev sudo git \
+        ca-certificates vim pkg-config build-essential yasm cmake libtool libc6 libc6-dev unzip wget libnuma1 libnuma-dev libx264-dev
+
+WORKDIR /app
+
+# Install golang
+COPY ./bundle/go1.18.5.linux-amd64.tar.gz /tmp/go1.18.5.linux-amd64.tar.gz
+RUN cd /tmp && \
+    tar -xvf go1.18.5.linux-amd64.tar.gz && \
+    mv go /usr/local && \
+    rm -rf /tmp/go* && \
+    mkdir /go
+ENV GOROOT=/usr/local/go
+ENV GOPATH=/go
+ENV PATH=$GOPATH/bin:$GOROOT/bin:/usr/local/lib:$PATH
+
+
+#RUN git clone https://github.com/hybridgroup/gocv.git && \
+#    cd gocv && \
+#    sed 's/sudo //' Makefile > NewMakefile && \
+#    mv NewMakefile Makefile && \
+#    make install
+
+# Make and install ffnvcodec
+COPY ./bundle/nv-codec-headers /tmp/nv-codec-headers
+RUN cd /tmp/nv-codec-headers && \
+make install && \
+rm -rf /tmp/nv-codec-headers
+
+
+# Make and install FFmpeg with NVIDIA GPU
+COPY ./bundle/ffmpeg /tmp/ffmpeg
+RUN cd /tmp/ffmpeg && \
+    ./configure --prefix=/usr/local/ffmpeg --enable-nonfree --enable-cuda-nvcc --enable-libnpp \
+        --extra-cflags=-I/usr/local/cuda/include --extra-ldflags=-L/usr/local/cuda/lib64 --disable-static --enable-shared && \
+    make -j 8 &&\
+    make install && \
+    cp /usr/local/ffmpeg/bin/ffmpeg /usr/bin/ffmpeg && \
+    echo '/usr/local/ffmpeg/lib/' >> /etc/ld.so.conf && \
+    ldconfig && \
+    rm -rf /tmp/ffmpeg
+
+# Install ITRI's OS-NVR
+COPY *.go ./
+COPY go.* ./
+#COPY .env ./
+COPY addons ./addons
+COPY pkg ./pkg
+COPY start ./start
+COPY utils ./utils
+COPY configs/templ ./configs
+COPY web ./web
+RUN mkdir storage
+RUN go mod tidy
+
+EXPOSE 2020 2021 2022
+
+CMD ["go", "run", "start/start.go", "-env", "configs/env.yaml"]
+

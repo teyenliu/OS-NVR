@@ -1,0 +1,45 @@
+version: "3.5"
+
+services:
+  # Main app.
+  nvr:
+    #build: /.
+    shm_size: 500m
+    image: itri-os-nvr-gpu:latest
+    networks:
+      - web
+    container_name: itri-os-nvr-gpu
+    restart: always
+    environment:
+      - MINIOENDPOINT=minio:9000
+      - MINIOACCESSKEYID=minioadmin
+      - MINIOSECRETACCESSKEY=minioadmin
+      - MINIOLOCATION=us-west-1
+      - MINIOEVENTBUCKET=testbucket
+      - MINIOUSESSL=false
+      # Timezone.
+      - TZ=Asia/Taipei 
+      - NVIDIA_DRIVER_CAPABILITIES=video,compute,utility
+    deploy:
+      resources:
+        reservations:
+          devices:
+          - driver: nvidia
+            device_ids: ['0,1']
+            capabilities: [gpu]
+    ports:
+      - 2020:2020 # App is hosted on port 2020
+      - 2021:2021
+      - 2022:2022
+    runtime: nvidia
+    #volumes:
+      #- ./configs:/app/configs # Configs.
+      #- ./storage:/app/storage # Storage.
+
+# 表示服務用的網絡是用外部的網路，並且搜尋名稱為「web」 
+# 搜尋成功後會自動與「redis-admin」服務相連
+# 若搜尋失敗，則會顯示該錯誤
+# ERROR: Please create the network manually using `docker network create web` and try again.
+networks:
+  web:
+    external: true

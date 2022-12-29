@@ -11,4 +11,7 @@
 *.backup
 /.vscode
 
-bundle*
+bundle/ffmpeg*
+bundle/nv-codec*
+bundle/go*
+
