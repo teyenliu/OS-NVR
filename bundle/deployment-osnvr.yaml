@@ -1,0 +1,62 @@
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: osnvr
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      app: osnvr
+  serviceName: "osnvr"
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        app: osnvr
+    spec:
+      containers:
+        - name: osnvr
+          image: itri-os-nvr:latest
+          imagePullPolicy: Never
+          ports:
+          - containerPort: 2020
+            name: web
+          - containerPort: 2021
+            name: rtsp
+          - containerPort: 2022
+            name: hls
+          env:
+          - name: MINIOENDPOINT
+            value: "minio:9000"
+          - name: MINIOACCESSKEYID
+            value: "minioadmin"
+          - name: MINIOSECRETACCESSKEY
+            value: "minioadmin"
+          - name: MINIOLOCATION
+            value: "us-west-1"
+          - name: MINIOEVENTBUCKET
+            value: "testbucket"
+          - name: MINIOUSESSL
+            value: "false"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 124Mi
+            limits:
+              cpu: 4000m
+              memory: 2048Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: osnvr
+  labels:
+    app: osnvr
+spec:
+  ports:
+  - port: 2020
+    name: web
+  clusterIP: None
+  selector:
+    app: osnvr

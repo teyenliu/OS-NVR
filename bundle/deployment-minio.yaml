@@ -1,0 +1,62 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio-deployment
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minio
+  template:
+    metadata:
+      labels:
+        app: minio
+    spec:
+      containers:
+      - name: minio
+        image: minio/minio:latest
+        imagePullPolicy: IfNotPresent
+        command:
+        - /bin/bash
+        - -c
+        args:
+        - minio server /data --console-address ":9090"
+        ports:
+        - name: data
+          containerPort: 9000
+          protocol: "TCP"
+        - name: console
+          containerPort: 9090
+          protocol: "TCP"
+        volumeMounts:
+        - mountPath: /data
+          name: localvolume # Corresponds to the `spec.volumes` Persistent Volume
+      volumes:
+      - name: localvolume
+        hostPath: # MinIO generally recommends using locally-attached volumes
+          path: /home/danny/Downloads/data # Specify a path to a local drive or volume on the Kubernetes worker node
+          type: DirectoryOrCreate # The path to the last directory must exist
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  namespace: default
+spec:
+  type: NodePort
+  ports:
+  - name: data
+    port: 9000
+    targetPort: 9000
+    protocol: TCP
+    nodePort: 30090
+  - name: console
+    port: 9090
+    targetPort: 9090
+    protocol: TCP
+    nodePort: 30091
+  selector:
+    app: minio
