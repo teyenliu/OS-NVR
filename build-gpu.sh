@@ -21,6 +21,7 @@ else
     git clone https://git.videolan.org/git/ffmpeg/nv-codec-headers.git ./bundle/nv-codec-headers
 fi
 
+go build -o bundle/nvr start/build/nvr.go 
 docker build --build-arg osnvr_version=$osnvr_version -f bundle/Dockerfile-gpu -t itri-os-nvr-gpu:latest .
 
 

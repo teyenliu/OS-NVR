@@ -16,11 +16,14 @@
 package nvr
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"html/template"
+	"net"
 	"net/http"
 	"nvr/pkg/group"
 	"nvr/pkg/log"
@@ -38,6 +41,19 @@ import (
 	"syscall"
 	"time"
 )
+
+var RegisterUrl string
+var UnRegisterUrl string
+var OsnvrId string
+
+type Osnvr struct {
+	Id         string `json:"id" validate:"required"`
+	GroupId    string `json:"groupid,omitempty"`
+	ServerPort string `json:"serverport,omitempty" validate:"required"`
+	RtspPort   string `json:"rtspport,omitempty" validate:"required"`
+	HlsPort    string `json:"hlsport,omitempty" validate:"required"`
+	Desc       string `json:"desc,omitempty"`
+}
 
 // Run .
 func Run() error {
@@ -66,8 +82,48 @@ func Run() error {
 	fatal := make(chan error, 1)
 	go func() { fatal <- app.run(ctx) }()
 
+	// kill (no param) default send syscall.SIGTERM
+	// kill -2 is syscall.SIGINT
+	// kill -9 is syscall.SIGKILL but can't be catch, so don't need add it
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
+
+	/*** Register OS-NVR ***/
+	if os.Getenv("POD_NAME") == "" {
+		OsnvrId, err = ExternalIP()
+	} else {
+		OsnvrId = os.Getenv("POD_NAME")
+	}
+
+	if os.Getenv("OSNVRAPIURL") == "" {
+		RegisterUrl = "http://localhost:6060/api/v1/osnvr"
+		UnRegisterUrl = "http://localhost:6060/api/v1/osnvr" + "/" + OsnvrId
+	} else {
+		RegisterUrl = os.Getenv("OSNVRAPIURL")
+		UnRegisterUrl = os.Getenv("OSNVRAPIURL") + "/" + OsnvrId
+	}
+
+	client := &http.Client{}
+	osnvr := Osnvr{
+		GroupId:    "1",
+		Id:         OsnvrId,
+		ServerPort: fmt.Sprintf("%d", app.Env.Port),
+		RtspPort:   fmt.Sprintf("%d", app.Env.RTSPPort),
+		HlsPort:    fmt.Sprintf("%d", app.Env.HLSPort),
+		Desc:       "automatically registered",
+	}
+
+	data, _ := json.Marshal(osnvr)
+	req, err := http.NewRequest(http.MethodPost, RegisterUrl, bytes.NewBuffer(data))
+	res, err := client.Do(req)
+	if err != nil {
+		app.logf(log.LevelError, "register osnvr error: %v", err)
+	} else {
+		fmt.Println("") // New line.
+		app.logf(log.LevelInfo, "register osnvr: %s succesfully.", OsnvrId)
+	}
+	res.Body.Close()
+	/*** The end of Register OS-NVR ***/
 
 	select {
 	case err = <-fatal:
@@ -76,6 +132,15 @@ func Run() error {
 		fmt.Println("") // New line.
 		app.logf(log.LevelInfo, "received %v, stopping", signal)
 	}
+
+	/*** Un-register OS-NVR ***/
+	fmt.Println("UnRegisterUrl:", UnRegisterUrl)
+	req, _ = http.NewRequest(http.MethodDelete, UnRegisterUrl, nil)
+	res, err = client.Do(req)
+	if err != nil {
+		app.logf(log.LevelError, "un-register osnvr: %s error: %v", OsnvrId, err)
+	}
+	/*** The end of Un-register OS-NVR ***/
 
 	app.monitorManager.StopMonitors()
 	app.logf(log.LevelInfo, "Monitors stopped.")
@@ -304,4 +369,41 @@ func (app *App) logf(level log.Level, format string, a ...interface{}) {
 		Src:   "app",
 		Msg:   fmt.Sprintf(format, a...),
 	})
+}
+
+func ExternalIP() (string, error) {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return "", err
+	}
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 {
+			continue // interface down
+		}
+		if iface.Flags&net.FlagLoopback != 0 {
+			continue // loopback interface
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			return "", err
+		}
+		for _, addr := range addrs {
+			var ip net.IP
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+			if ip == nil || ip.IsLoopback() {
+				continue
+			}
+			ip = ip.To4()
+			if ip == nil {
+				continue // not an ipv4 address
+			}
+			return ip.String(), nil
+		}
+	}
+	return "", errors.New("are you connected to the network?")
 }

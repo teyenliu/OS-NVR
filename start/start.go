@@ -31,6 +31,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"syscall"
 	"text/template"
 
 	"gopkg.in/yaml.v3"
@@ -117,7 +118,7 @@ func startMain(env configEnv, main string, envPath string) error {
 
 	// Redirect interrupt to child process.
 	stop := make(chan os.Signal, 1)
-	signal.Notify(stop)
+	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		s := <-stop
 		cmd.Process.Signal(s) //nolint:errcheck

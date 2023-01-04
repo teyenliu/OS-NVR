@@ -42,18 +42,12 @@ ENV PATH=$GOPATH/bin:$GOROOT/bin:/usr/local/lib:$PATH
 #    make install
 
 # Install ITRI's OS-NVR
-COPY *.go ./
-COPY go.* ./
-#COPY .env ./
-COPY addons ./addons
-COPY pkg ./pkg
-COPY start ./start
-COPY utils ./utils
+COPY ./bundle/nvr ./nvr
 COPY configs/templ ./configs
 COPY web ./web
 RUN mkdir storage
-RUN go mod tidy
+#RUN go mod tidy
 
 EXPOSE 2020 2021 2022
 
-CMD ["go", "run", "start/start.go", "-env", "configs/env.yaml"]
+CMD ["./nvr", "-env", "configs/env.yaml"]
