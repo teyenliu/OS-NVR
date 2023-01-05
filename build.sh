@@ -12,5 +12,5 @@ else
 fi
 go build -o bundle/nvr start/build/nvr.go 
 docker build --build-arg osnvr_version=$osnvr_version -t itri-os-nvr:latest -f ./bundle/Dockerfile .
-
+docker tag itri-os-nvr:latest 140.96.113.140:5000/itri-os-nvr:latest
 

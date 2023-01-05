@@ -92,7 +92,7 @@ func Run() error {
 	if os.Getenv("POD_NAME") == "" {
 		OsnvrId, err = ExternalIP()
 	} else {
-		OsnvrId = os.Getenv("POD_NAME")
+		OsnvrId = os.Getenv("POD_NAME") + ".osnvr"
 	}
 
 	if os.Getenv("OSNVRAPIURL") == "" {

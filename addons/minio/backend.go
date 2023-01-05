@@ -39,7 +39,7 @@ func init() {
 
 func loadEnv() {
 	if os.Getenv("MINIOENDPOINT") == "" {
-		MINIOENDPOINT = "localhost:9000"
+		MINIOENDPOINT = "localhost:30090"
 	} else {
 		MINIOENDPOINT = os.Getenv("MINIOENDPOINT")
 	}

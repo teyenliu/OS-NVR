@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: osnvr
-          image: itri-os-nvr:latest
+          image: 140.96.113.140:5000/itri-os-nvr:latest
           imagePullPolicy: Never
           ports:
           - containerPort: 2020
@@ -40,7 +40,7 @@ spec:
           - name: MINIOUSESSL
             value: "false"
           - name: OSNVRAPIURL
-            value: "http://140.96.113.140:6060/api/v1/osnvr"
+            value: "http://itri-vms:6060/api/v1/osnvr"
           - name: POD_NAME
             valueFrom:
               fieldRef:

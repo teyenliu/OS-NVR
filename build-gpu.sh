@@ -23,5 +23,5 @@ fi
 
 go build -o bundle/nvr start/build/nvr.go 
 docker build --build-arg osnvr_version=$osnvr_version -f bundle/Dockerfile-gpu -t itri-os-nvr-gpu:latest .
-
+docker tag itri-os-nvr-gpu:latest 140.96.113.140:5000/itri-os-nvr-gpu:latest
 
