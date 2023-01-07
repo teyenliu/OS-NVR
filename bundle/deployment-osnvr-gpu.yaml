@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: osnvr
-          image: 140.96.113.140:5000/itri-os-nvr:latest
+          image: 140.96.113.140:5000/itri-os-nvr-gpu:latest
           imagePullPolicy: IfNotPresent
           ports:
           - containerPort: 2020
@@ -41,6 +41,8 @@ spec:
             value: "false"
           - name: OSNVRAPIURL
             value: "http://itri-vms:6060/api/v1/osnvr"
+          - name: NVIDIA_DRIVER_CAPABILITIES
+            value: "video,compute,utility"
           - name: POD_NAME
             valueFrom:
               fieldRef:
@@ -64,6 +66,7 @@ spec:
             limits:
               cpu: 4000m
               memory: 2048Mi
+              nvidia.com/gpu: 1 # requesting 1 GPU
         - name: helloworld-golang-internal
           image: helloworld-golang:latest
           imagePullPolicy: IfNotPresent

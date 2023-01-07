@@ -5,7 +5,7 @@ services:
   nvr:
     #build: /.
     shm_size: 500m
-    image: itri-os-nvr-gpu:latest
+    image: 140.96.113.140:5000/itri-os-nvr-gpu:latest
     networks:
       - web
     container_name: itri-os-nvr-gpu

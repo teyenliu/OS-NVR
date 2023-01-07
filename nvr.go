@@ -88,7 +88,7 @@ func Run() error {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 
-	/*** Register OS-NVR ***/
+	/*************** Register OS-NVR ***************/
 	if os.Getenv("POD_NAME") == "" {
 		OsnvrId, err = ExternalIP()
 	} else {
@@ -117,13 +117,13 @@ func Run() error {
 	req, err := http.NewRequest(http.MethodPost, RegisterUrl, bytes.NewBuffer(data))
 	res, err := client.Do(req)
 	if err != nil {
-		app.logf(log.LevelError, "register osnvr error: %v", err)
+		app.logf(log.LevelError, "register osnvr error: %v. It cannot sync with VMS API.", err)
 	} else {
 		fmt.Println("") // New line.
 		app.logf(log.LevelInfo, "register osnvr: %s succesfully.", OsnvrId)
+		res.Body.Close()
 	}
-	res.Body.Close()
-	/*** The end of Register OS-NVR ***/
+	/*********************************************/
 
 	select {
 	case err = <-fatal:
@@ -183,6 +183,12 @@ func newApp(envPath string, wg *sync.WaitGroup, hooks *hookList) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not get environment config: %w", err)
 	}
+
+	/*************** Clean up nvr monitor configs *****************/
+	cPath := filepath.Join(env.HomeDir, "configs/monitors/")
+	fmt.Printf("nvr monitor config:%s\n", cPath)
+	os.RemoveAll(cPath)
+	/**************************************************************/
 
 	general, err := storage.NewConfigGeneral(env.ConfigDir)
 	if err != nil {
