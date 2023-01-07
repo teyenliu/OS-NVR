@@ -27,7 +27,7 @@ RUN apt update && \
 WORKDIR /app
 
 # Install golang
-COPY ./bundle/go1.18.5.linux-amd64.tar.gz /tmp/go1.18.5.linux-amd64.tar.gz
+COPY ./go1.18.5.linux-amd64.tar.gz /tmp/go1.18.5.linux-amd64.tar.gz
 RUN cd /tmp && \
     tar -xvf go1.18.5.linux-amd64.tar.gz && \
     mv go /usr/local && \
@@ -45,14 +45,14 @@ ENV PATH=$GOPATH/bin:$GOROOT/bin:/usr/local/lib:$PATH
 #    make install
 
 # Make and install ffnvcodec
-COPY ./bundle/nv-codec-headers /tmp/nv-codec-headers
+COPY ./nv-codec-headers /tmp/nv-codec-headers
 RUN cd /tmp/nv-codec-headers && \
 make install && \
 rm -rf /tmp/nv-codec-headers
 
 
 # Make and install FFmpeg with NVIDIA GPU
-COPY ./bundle/ffmpeg /tmp/ffmpeg
+COPY ./ffmpeg /tmp/ffmpeg
 RUN cd /tmp/ffmpeg && \
     ./configure --prefix=/usr/local/ffmpeg --enable-nonfree --enable-cuda-nvcc --enable-libnpp \
         --extra-cflags=-I/usr/local/cuda/include --extra-ldflags=-L/usr/local/cuda/lib64 --disable-static --enable-shared && \
@@ -64,9 +64,9 @@ RUN cd /tmp/ffmpeg && \
     rm -rf /tmp/ffmpeg
 
 # Install ITRI's OS-NVR
-COPY ./bundle/nvr ./nvr
-COPY configs/templ ./configs
-COPY web ./web
+COPY ./nvr ./nvr
+COPY ./templ ./configs
+COPY ./web ./web
 RUN mkdir storage
 #RUN go mod tidy
 

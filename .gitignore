@@ -15,4 +15,4 @@ bundle/ffmpeg*
 bundle/nv-codec*
 bundle/go*
 bundle/nvr
-
+bundle/web

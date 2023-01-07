@@ -24,7 +24,7 @@ RUN apt update && \
 WORKDIR /app
 
 # Install golang
-COPY ./bundle/go1.18.5.linux-amd64.tar.gz /tmp/go1.18.5.linux-amd64.tar.gz
+COPY ./go1.18.5.linux-amd64.tar.gz /tmp/go1.18.5.linux-amd64.tar.gz
 RUN cd /tmp && \
     tar -xvf go1.18.5.linux-amd64.tar.gz && \
     mv go /usr/local && \
@@ -42,9 +42,9 @@ ENV PATH=$GOPATH/bin:$GOROOT/bin:/usr/local/lib:$PATH
 #    make install
 
 # Install ITRI's OS-NVR
-COPY ./bundle/nvr ./nvr
-COPY configs/templ ./configs
-COPY web ./web
+COPY ./nvr ./nvr
+COPY ./templ ./configs
+COPY ./web ./web
 RUN mkdir storage
 #RUN go mod tidy
 
