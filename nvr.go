@@ -23,6 +23,7 @@ import (
 	"flag"
 	"fmt"
 	"html/template"
+	"io"
 	"net"
 	"net/http"
 	"nvr/pkg/group"
@@ -44,6 +45,7 @@ import (
 
 var RegisterUrl string
 var UnRegisterUrl string
+var SyncUrl string
 var OsnvrId string
 
 type Osnvr struct {
@@ -88,7 +90,6 @@ func Run() error {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 
-	/*************** Register OS-NVR ***************/
 	if os.Getenv("POD_NAME") == "" {
 		OsnvrId, err = ExternalIP()
 	} else {
@@ -98,11 +99,14 @@ func Run() error {
 	if os.Getenv("OSNVRAPIURL") == "" {
 		RegisterUrl = "http://localhost:6060/api/v1/osnvr"
 		UnRegisterUrl = "http://localhost:6060/api/v1/osnvr" + "/" + OsnvrId
+		SyncUrl = "http://localhost:6060/api/v1/osnvr" + "/sync/" + OsnvrId
 	} else {
 		RegisterUrl = os.Getenv("OSNVRAPIURL")
 		UnRegisterUrl = os.Getenv("OSNVRAPIURL") + "/" + OsnvrId
+		SyncUrl = os.Getenv("OSNVRAPIURL") + "/sync/" + OsnvrId
 	}
 
+	/*************** Register OS-NVR ***************/
 	client := &http.Client{}
 	osnvr := Osnvr{
 		GroupId:    "1",
@@ -117,10 +121,42 @@ func Run() error {
 	req, err := http.NewRequest(http.MethodPost, RegisterUrl, bytes.NewBuffer(data))
 	res, err := client.Do(req)
 	if err != nil {
-		app.logf(log.LevelError, "register osnvr error: %v. It cannot sync with VMS API.", err)
+		app.logf(log.LevelError, "register osnvr error: %v. It cannot do register with VMS API.", err)
 	} else {
 		fmt.Println("") // New line.
 		app.logf(log.LevelInfo, "register osnvr: %s succesfully.", OsnvrId)
+		res.Body.Close()
+	}
+	/*********************************************/
+
+	// Wait up to 15s for osnvr instance's web service getting readay
+	i := 1
+	req, _ = http.NewRequest(http.MethodGet,
+		fmt.Sprintf("http://localhost:%d/api/system/time-zone", app.Env.Port), nil)
+	for i <= 15 {
+		time.Sleep(1 * time.Second)
+		res, err = client.Do(req)
+		if err != nil {
+			fmt.Printf("The %d second get err: %s \n", i, err.Error())
+		} else {
+			data, _ := io.ReadAll(res.Body)
+			fmt.Printf("The %d second get: %s \n", i, data)
+			if len(string(data)) > 1 {
+				break
+			}
+		}
+		i++
+	}
+
+	/********** Sync Nvrconfigs back to OSNVR Instance **********/
+
+	req, err = http.NewRequest(http.MethodGet, SyncUrl, nil)
+	res, err = client.Do(req)
+	if err != nil {
+		app.logf(log.LevelError, "sync osnvr error: %v. It cannot sync with VMS API.", err)
+	} else {
+		fmt.Println("") // New line.
+		app.logf(log.LevelInfo, "sync osnvr: %s succesfully.", OsnvrId)
 		res.Body.Close()
 	}
 	/*********************************************/
