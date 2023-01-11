@@ -169,108 +169,152 @@ var highUsage = func(fs.FS) int64 {
 }
 
 func TestPurge(t *testing.T) {
-	cases := map[string]struct {
-		input     *Manager
-		expectErr bool
-	}{
-		"usageErr": {
-			&Manager{
-				storageDirFS: recordingTestFS,
-				disk: &disk{
-					storageDirFS: recordingTestFS,
-					general:      diskSpaceErr,
-					diskUsageBytes: func(fs.FS) int64 {
-						return 1
+	t.Run("ok", func(t *testing.T) {
+		cases := map[string]struct {
+			before, after []string
+		}{
+			"noDays":   {[]string{"recordings/2000/01"}, []string{"recordings"}},
+			"noMonths": {[]string{"recordings/2000"}, []string{"recordings"}},
+			"noYears":  {[]string{"recordings"}, []string{"recordings"}},
+			"oneDay":   {[]string{"recordings/2000/01/01/x/x/x"}, []string{"recordings/2000/01"}},
+			"twoDays": {
+				[]string{
+					"recordings/2000/01/01/x/x/x",
+					"recordings/2000/01/02/x/x/x",
+				},
+				[]string{
+					"recordings/2000/01/02/x/x/x",
+				},
+			},
+			"twoMonths": {
+				[]string{
+					"recordings/2000/01/01/x/x/x",
+					"recordings/2000/02/01/x/x/x",
+				},
+				[]string{
+					"recordings/2000/01",
+					"recordings/2000/02/01/x/x/x",
+				},
+			},
+			"twoYears": {
+				[]string{
+					"recordings/2000/01/01/x/x/x",
+					"recordings/2001/01/01/x/x/x",
+				},
+				[]string{
+					"recordings/2000/01",
+					"recordings/2001/01/01/x/x/x",
+				},
+			},
+			"removeEmptyDirs": {
+				[]string{
+					"recordings/2000/01",
+					"recordings/2001/01/01/x/x/x",
+					"recordings/2002/01/01/x/x/x",
+				},
+				[]string{
+					"recordings/2001/01",
+					"recordings/2002/01/01/x/x/x",
+				},
+			},
+		}
+		for name, tc := range cases {
+			t.Run(name, func(t *testing.T) {
+				tempDir := t.TempDir()
+
+				m := &Manager{
+					storageDir: tempDir,
+					disk: &disk{
+						storageDirFS: os.DirFS(tempDir),
+						general: &ConfigGeneral{
+							Config: map[string]string{
+								"diskSpace": "1",
+							},
+						},
+						diskUsageBytes: highUsage,
 					},
-				},
-			},
-			true,
-		},
-		"below99%": {
-			&Manager{
-				storageDirFS: recordingTestFS,
-				disk: &disk{
-					storageDirFS: recordingTestFS,
-					general:      diskSpace1,
-					diskUsageBytes: func(fs.FS) int64 {
-						return 1
-					},
-				},
-			},
-			false,
-		},
-		"ok": {
-			&Manager{
-				storageDirFS: recordingTestFS,
-				disk: &disk{
-					storageDirFS:   recordingTestFS,
-					general:        diskSpace1,
-					diskUsageBytes: highUsage,
-				},
-				removeAll: func(string) error {
-					return nil
-				},
-			},
-			false,
-		},
-		"removeAllErr": {
-			&Manager{
-				storageDirFS: recordingTestFS,
-				disk: &disk{
-					storageDirFS:   recordingTestFS,
-					general:        diskSpace1,
-					diskUsageBytes: highUsage,
-				},
-				removeAll: func(string) error {
-					return errors.New("")
-				},
-			},
-			true,
-		},
-	}
+					removeAll: os.RemoveAll,
+					logger:    log.NewDummyLogger(),
+				}
 
-	for name, tc := range cases {
-		t.Run(name, func(t *testing.T) {
-			err := tc.input.purge()
-			gotError := err != nil
-			require.Equal(t, tc.expectErr, gotError, err)
-		})
-	}
-
-	t.Run("removeAll", func(t *testing.T) {
-		tempDir, err := os.MkdirTemp("", "")
-		require.NoError(t, err)
-		defer os.RemoveAll(tempDir)
-
-		testDir := filepath.Join(tempDir, "recordings", "2000", "01", "01")
-		err = os.MkdirAll(testDir, 0o700)
-		require.NoError(t, err)
-
+				writeEmptyDirs(t, tempDir, tc.before)
+				require.NoError(t, m.prune())
+				require.Equal(t, tc.after, listEmptyDirs(t, tempDir))
+			})
+		}
+	})
+	t.Run("usageErr", func(t *testing.T) {
 		m := &Manager{
-			storageDirFS: os.DirFS(tempDir),
+			storageDirFS: recordingTestFS,
 			disk: &disk{
-				storageDirFS: os.DirFS(tempDir),
-				general: &ConfigGeneral{
-					Config: map[string]string{
-						"diskSpace": "1",
-					},
+				storageDirFS: recordingTestFS,
+				general:      diskSpace1,
+				diskUsageBytes: func(fs.FS) int64 {
+					return 1
 				},
+			},
+		}
+		require.NoError(t, m.prune())
+	})
+	t.Run("below99%", func(t *testing.T) {
+		m := &Manager{
+			disk: &disk{
+				storageDirFS: recordingTestFS,
+				general:      diskSpaceErr,
+				diskUsageBytes: func(fs.FS) int64 {
+					return 1
+				},
+			},
+		}
+		require.Error(t, m.prune())
+	})
+	t.Run("removeAllErr", func(t *testing.T) {
+		m := &Manager{
+			storageDirFS: recordingTestFS,
+			disk: &disk{
+				storageDirFS:   recordingTestFS,
+				general:        diskSpace1,
 				diskUsageBytes: highUsage,
 			},
-			removeAll: os.RemoveAll,
+			removeAll: func(string) error {
+				return errors.New("")
+			},
 		}
-		err = m.purge()
-		require.NoError(t, err)
-
-		err = m.purge()
-		require.NoError(t, err)
-
-		yearDir := filepath.Join(tempDir, "recordings", "1000")
-		require.NoDirExists(t, yearDir, "empty year directory was not deleted")
-
-		recordingsDir := filepath.Join(tempDir, "recordings")
-		require.DirExists(t, recordingsDir, "recordings directory was deleted")
+		require.Error(t, m.prune())
 	})
+}
+
+func writeEmptyDirs(t *testing.T, base string, paths []string) {
+	t.Helper()
+	for _, path := range paths {
+		err := os.MkdirAll(filepath.Join(base, path), 0o700)
+		require.NoError(t, err)
+	}
+}
+
+func listEmptyDirs(t *testing.T, path string) []string {
+	t.Helper()
+	var list []string
+	walkFunc := func(path2 string, _ fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		entries, err := os.ReadDir(filepath.Join(path, path2))
+		if err != nil {
+			return err
+		}
+
+		dirIsEmpty := len(entries) == 0
+		if dirIsEmpty {
+			list = append(list, path2)
+		}
+		return nil
+	}
+	err := fs.WalkDir(os.DirFS(path), ".", walkFunc)
+	require.NoError(t, err)
+
+	return list
 }
 
 func TestPurgeLoop(t *testing.T) {
@@ -617,4 +661,64 @@ func TestGeneral(t *testing.T) {
 		err = general.Set(map[string]string{})
 		require.ErrorIs(t, err, os.ErrNotExist)
 	})
+}
+
+func TestDeleteRecording(t *testing.T) {
+	t.Run("ok", func(t *testing.T) {
+		recordingsDir := t.TempDir()
+		recDir := filepath.Join(recordingsDir, "2000", "01", "01", "m1")
+		recID := "2000-01-01_02-02-02_m1"
+		files := []string{
+			recID + ".jpeg",
+			recID + ".json",
+			recID + ".mp4",
+			recID + ".x",
+			"2000-01-01_02-02-02_x1.mp4",
+		}
+		require.NoError(t, os.MkdirAll(recDir, 0o700))
+		createFiles(t, recDir, files)
+		require.Equal(t, files, listDirectory(t, recDir))
+
+		err := DeleteRecording(recordingsDir, recID)
+		require.NoError(t, err)
+		require.Equal(t,
+			[]string{"2000-01-01_02-02-02_x1.mp4"},
+			listDirectory(t, recDir),
+		)
+	})
+	t.Run("invalidIDErr", func(t *testing.T) {
+		err := DeleteRecording(t.TempDir(), "invalid")
+		require.ErrorIs(t, err, ErrInvalidRecordingID)
+	})
+	t.Run("dirNotExistErr", func(t *testing.T) {
+		err := DeleteRecording(t.TempDir(), "2000-01-01_02-02-02_m1")
+		require.ErrorIs(t, err, os.ErrNotExist)
+	})
+	t.Run("recNotExistErr", func(t *testing.T) {
+		recordingsDir := t.TempDir()
+		recDir := filepath.Join(recordingsDir, "2000", "01", "01", "m1")
+		require.NoError(t, os.MkdirAll(recDir, 0o700))
+
+		err := DeleteRecording(recordingsDir, "2000-01-01_02-02-02_m1")
+		require.ErrorIs(t, err, os.ErrNotExist)
+	})
+}
+
+func createFiles(t *testing.T, dir string, paths []string) {
+	for _, path := range paths {
+		_, err := os.Create(filepath.Join(dir, path))
+		require.NoError(t, err)
+	}
+}
+
+func listDirectory(t *testing.T, path string) []string {
+	t.Helper()
+	entries, err := fs.ReadDir(os.DirFS(path), ".")
+	require.NoError(t, err)
+
+	var list []string
+	for _, entry := range entries {
+		list = append(list, entry.Name())
+	}
+	return list
 }

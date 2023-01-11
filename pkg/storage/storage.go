@@ -25,6 +25,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -70,9 +71,9 @@ func (s *Manager) DiskUsage(maxAge time.Duration) (DiskUsage, error) {
 	return s.disk.usage(maxAge)
 }
 
-// purge checks if disk usage is above 99%,
+// prune checks if disk usage is above 99%,
 // if true deletes all files from the oldest day.
-func (s *Manager) purge() error {
+func (s *Manager) prune() error {
 	usage, err := s.DiskUsage(10 * time.Minute)
 	if err != nil {
 		return fmt.Errorf("update disk usage: %w", err)
@@ -86,14 +87,15 @@ func (s *Manager) purge() error {
 	// Find the oldest day.
 	path := s.RecordingsDir()
 	for depth := 1; depth <= dayDepth; depth++ {
-		list, err := fs.ReadDir(s.storageDirFS, ".")
+		list, err := fs.ReadDir(os.DirFS(path), ".")
 		if err != nil {
 			return fmt.Errorf("read directory %v: %w", path, err)
 		}
 
 		isDirEmpty := len(list) == 0
 		if isDirEmpty {
-			if depth <= 2 {
+			// Don't delete the recordings directory.
+			if depth == 1 {
 				return nil
 			}
 
@@ -110,6 +112,12 @@ func (s *Manager) purge() error {
 		path = filepath.Join(path, firstFile)
 	}
 
+	s.logger.Log(log.Entry{
+		Level: log.LevelInfo,
+		Src:   "app",
+		Msg:   fmt.Sprintf("pruning storage: deleting %q", path),
+	})
+
 	// Delete all files from that day
 	if err := s.removeAll(path); err != nil {
 		return fmt.Errorf("remove directory: %w", err)
@@ -124,7 +132,7 @@ func (s *Manager) PurgeLoop(ctx context.Context, duration time.Duration) {
 		case <-ctx.Done():
 			return
 		case <-time.After(duration):
-			if err := s.purge(); err != nil {
+			if err := s.prune(); err != nil {
 				s.logger.Log(log.Entry{
 					Level: log.LevelError,
 					Src:   "app",
@@ -466,6 +474,43 @@ func (general *ConfigGeneral) DiskSpace() (int64, error) {
 	diskSpaceByte := diskSpaceGB * gigabyte
 
 	return int64(diskSpaceByte), nil
+}
+
+// DeleteRecording delete a recording by ID.
+// Will return os.ErrNotExist if the recording doesn't exists.
+func DeleteRecording(recordingsDir, recID string) error {
+	// RecordingIDToPath will validate the ID.
+	recPath, err := RecordingIDToPath(recID)
+	if err != nil {
+		return fmt.Errorf("recording id to path: %q %w", recID, err)
+	}
+
+	fullRecPath := filepath.Join(recordingsDir, recPath)
+	recDir := filepath.Dir(fullRecPath)
+
+	var returnedError error
+	recordingExists := false
+	entries, err := fs.ReadDir(os.DirFS(recDir), ".")
+	if err != nil {
+		return fmt.Errorf("read directory: %q %w", recDir, err)
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if !strings.HasPrefix(name, recID) {
+			continue
+		}
+		path := filepath.Join(recDir, name)
+		err := os.Remove(path)
+		if err != nil {
+			returnedError = fmt.Errorf("delete file: %q %w", path, err)
+		}
+		recordingExists = true
+	}
+
+	if !recordingExists {
+		return os.ErrNotExist
+	}
+	return returnedError
 }
 
 func dirExist(path string) bool {
