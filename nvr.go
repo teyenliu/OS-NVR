@@ -129,7 +129,7 @@ func Run() error {
 	}
 	/*********************************************/
 
-	// Wait up to 15s for osnvr instance's web service getting readay
+	// Wait up to 15s for osnvr instance's web service getting ready
 	i := 1
 	req, _ = http.NewRequest(http.MethodGet,
 		fmt.Sprintf("http://localhost:%d/api/system/time-zone", app.Env.Port), nil)

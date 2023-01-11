@@ -41,6 +41,8 @@ spec:
             value: "false"
           - name: OSNVRAPIURL
             value: "http://itri-vms:6060/api/v1/osnvr"
+          - name: TZ
+            value: "Asia/Taipei"
           - name: POD_NAME
             valueFrom:
               fieldRef:
@@ -87,6 +89,9 @@ spec:
               fieldRef:
                 fieldPath: spec.nodeName
           resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
             limits:
               cpu: 4000m
               memory: 2048Mi
