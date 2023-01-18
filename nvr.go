@@ -147,7 +147,9 @@ func Run() error {
 		}
 		i++
 	}
-
+	// FIXME:
+	// It should have a good way to detect OSNVR's web service is ready
+	time.Sleep(3 * time.Second)
 	/********** Sync Nvrconfigs back to OSNVR Instance **********/
 
 	req, err = http.NewRequest(http.MethodGet, SyncUrl, nil)

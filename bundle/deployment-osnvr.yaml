@@ -118,3 +118,26 @@ spec:
   clusterIP: None
   selector:
     app: osnvr
+---
+#apiVersion: v1
+#kind: Service
+#metadata:
+#  name: osnvr-ext
+#  labels:
+#    app: osnvr-ext
+#spec:
+#  type: LoadBalancer
+#  externalIPs: 
+#    - 140.96.113.140
+#  ports:
+#  - port: 2020
+#    name: web
+#    nodePort: 30020
+#  - port: 2021
+#    name: rtsp
+#    nodePort: 30021
+#  - port: 2022
+#    name: hls
+#    nodePort: 30022
+#  selector:
+#    app: osnvr
