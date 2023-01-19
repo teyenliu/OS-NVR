@@ -118,27 +118,37 @@ func Run() error {
 		HlsPort:    fmt.Sprintf("%d", app.Env.HLSPort),
 		Desc:       "automatically registered",
 	}
-
 	data, _ := json.Marshal(osnvr)
-	req, err := http.NewRequest(http.MethodPost, RegisterUrl, bytes.NewBuffer(data))
-	res, err := client.Do(req)
-	if err != nil {
-		app.logf(log.LevelError, "register osnvr error: %v. It cannot do register with VMS API.", err)
-	} else {
-		fmt.Println("") // New line.
-		app.logf(log.LevelInfo, "register osnvr: %s succesfully.", OsnvrId)
-		res.Body.Close()
+
+	errRetry := retry.Do(
+		func() error {
+			req, err := http.NewRequest(http.MethodPost, RegisterUrl, bytes.NewBuffer(data))
+			res, err := client.Do(req)
+			if err != nil {
+				app.logf(log.LevelError, "register osnvr error: %v. It cannot do register with VMS API.", err)
+				return err
+			}
+			fmt.Println("") // New line.
+			app.logf(log.LevelInfo, "register osnvr: %s succesfully.", OsnvrId)
+			defer res.Body.Close()
+			return nil
+		},
+	)
+	if errRetry != nil {
+		app.logf(log.LevelInfo, "register osnvr: %s failed!.", OsnvrId)
 	}
 	/*********************************************/
 
+	time.Sleep(2 * time.Second)
+
 	/********** Sync Nvrconfigs back to OSNVR Instance **********/
 	// By default to retry for 10 times by using retry library
-	req, err = http.NewRequest(http.MethodGet, SyncUrl, nil)
+	req, err := http.NewRequest(http.MethodGet, SyncUrl, nil)
 	var body []byte
 	var msg map[string]interface{}
-	retry.Do(
+	errRetry = retry.Do(
 		func() error {
-			res, err = client.Do(req)
+			res, err := client.Do(req)
 			if err != nil {
 				app.logf(log.LevelError, "sync osnvr error: %v. It cannot sync with VMS API.", err)
 				return err
@@ -158,6 +168,9 @@ func Run() error {
 			return nil
 		},
 	)
+	if errRetry != nil {
+		app.logf(log.LevelInfo, "sync osnvr: %s failed!.", OsnvrId)
+	}
 	/*********************************************/
 
 	select {
@@ -169,12 +182,22 @@ func Run() error {
 	}
 
 	/*** Un-register OS-NVR ***/
-	fmt.Println("UnRegisterUrl:", UnRegisterUrl)
 	req, _ = http.NewRequest(http.MethodDelete, UnRegisterUrl, nil)
-	res, err = client.Do(req)
-	if err != nil {
-		app.logf(log.LevelError, "un-register osnvr: %s error: %v", OsnvrId, err)
+	errRetry = retry.Do(
+		func() error {
+			_, err = client.Do(req)
+			if err != nil {
+				app.logf(log.LevelError, "un-register osnvr: %s error: %v", OsnvrId, err)
+				return err
+			}
+			app.logf(log.LevelInfo, "un-register osnvr: %s succesfully.", OsnvrId)
+			return nil
+		},
+	)
+	if errRetry != nil {
+		app.logf(log.LevelInfo, "un-register osnvr: %s failed!.", OsnvrId)
 	}
+
 	/*** The end of Un-register OS-NVR ***/
 
 	app.monitorManager.StopMonitors()
