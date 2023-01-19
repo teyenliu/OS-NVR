@@ -23,7 +23,7 @@ import (
 	"flag"
 	"fmt"
 	"html/template"
-	"io"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"nvr/pkg/group"
@@ -41,6 +41,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/avast/retry-go"
 )
 
 var RegisterUrl string
@@ -129,38 +131,33 @@ func Run() error {
 	}
 	/*********************************************/
 
-	// Wait up to 15s for osnvr instance's web service getting ready
-	i := 1
-	req, _ = http.NewRequest(http.MethodGet,
-		fmt.Sprintf("http://localhost:%d/api/system/time-zone", app.Env.Port), nil)
-	for i <= 15 {
-		time.Sleep(1 * time.Second)
-		res, err = client.Do(req)
-		if err != nil {
-			fmt.Printf("The %d second get err: %s \n", i, err.Error())
-		} else {
-			data, _ := io.ReadAll(res.Body)
-			fmt.Printf("The %d second get: %s \n", i, data)
-			if len(string(data)) > 1 {
-				break
-			}
-		}
-		i++
-	}
-	// FIXME:
-	// It should have a good way to detect OSNVR's web service is ready
-	time.Sleep(3 * time.Second)
 	/********** Sync Nvrconfigs back to OSNVR Instance **********/
-
+	// By default to retry for 10 times by using retry library
 	req, err = http.NewRequest(http.MethodGet, SyncUrl, nil)
-	res, err = client.Do(req)
-	if err != nil {
-		app.logf(log.LevelError, "sync osnvr error: %v. It cannot sync with VMS API.", err)
-	} else {
-		fmt.Println("") // New line.
-		app.logf(log.LevelInfo, "sync osnvr: %s succesfully.", OsnvrId)
-		res.Body.Close()
-	}
+	var body []byte
+	var msg map[string]interface{}
+	retry.Do(
+		func() error {
+			res, err = client.Do(req)
+			if err != nil {
+				app.logf(log.LevelError, "sync osnvr error: %v. It cannot sync with VMS API.", err)
+				return err
+			}
+			body, err = ioutil.ReadAll(res.Body)
+			if err != nil {
+				return err
+			}
+			err = json.Unmarshal(body, &msg)
+			if msg["message"] == "error" {
+				app.logf(log.LevelError, "message:%s", msg["message"])
+				return err
+			}
+			fmt.Println("") // New line.
+			app.logf(log.LevelInfo, "sync osnvr: %s succesfully.", OsnvrId)
+			defer res.Body.Close()
+			return nil
+		},
+	)
 	/*********************************************/
 
 	select {
