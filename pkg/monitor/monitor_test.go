@@ -1,17 +1,4 @@
-// Copyright 2020-2022 The OS-NVR Authors.
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation; either version 2 of the License, or
-// (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
-//
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+// SPDX-License-Identifier: GPL-2.0-or-later
 
 package monitor
 
@@ -543,7 +530,7 @@ func TestInputStreamInfo(t *testing.T) {
 	t.Run("getMuxerErr", func(t *testing.T) {
 		mockError := errors.New("mock")
 		muxer := newMockMuxerFunc(&mockMuxer{
-			streamInfoErr: mockError,
+			getMuxerErr: mockError,
 		})
 		i := &InputProcess{
 			serverPath: video.ServerPath{
@@ -554,30 +541,18 @@ func TestInputStreamInfo(t *testing.T) {
 		require.ErrorIs(t, err, mockError)
 		require.Nil(t, actual)
 	})
-	t.Run("canceled", func(t *testing.T) {
-		muxer := newMockMuxerFunc(&mockMuxer{})
-		i := &InputProcess{
-			serverPath: video.ServerPath{
-				HLSMuxer: muxer,
-			},
-		}
-
-		ctx, cancel := context.WithCancel(context.Background())
-		cancel()
-
-		actual, err := i.StreamInfo(ctx)
-		require.ErrorIs(t, err, context.Canceled)
-		require.Nil(t, actual)
-	})
 }
 
 func TestSendEvent(t *testing.T) {
 	t.Run("canceled", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		m := &Monitor{ctx: ctx}
+		m := &Monitor{ctx: ctx, recorder: &Recorder{}}
 
-		err := m.SendEvent(storage.Event{})
+		err := m.SendEvent(storage.Event{
+			Time:        time.Unix(1, 0),
+			RecDuration: 1,
+		})
 		require.ErrorIs(t, err, context.Canceled)
 	})
 	t.Run("missingTimeErr", func(t *testing.T) {

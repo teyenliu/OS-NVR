@@ -1,17 +1,4 @@
-// Copyright 2020-2022 The OS-NVR Authors.
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation; either version 2 of the License, or
-// (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
-//
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+// SPDX-License-Identifier: GPL-2.0-or-later
 
 package timeline
 
@@ -81,11 +68,12 @@ func handleTimeline(recordingsDir string) http.Handler {
 func onRecSaved(r *monitor.Recorder, recPath string, recData storage.RecordingData) {
 	id := r.Config.ID()
 	logf := func(level log.Level, format string, a ...interface{}) {
+		msg := fmt.Sprintf(format, a...)
 		r.Logger.Log(log.Entry{
 			Level:     level,
 			Src:       "timeline",
 			MonitorID: id,
-			Msg:       fmt.Sprintf(format, a...),
+			Msg:       r.Env.CensorLog(msg),
 		})
 	}
 

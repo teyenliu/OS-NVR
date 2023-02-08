@@ -1,17 +1,4 @@
-// Copyright 2020-2022 The OS-NVR Authors.
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation; either version 2 of the License, or
-// (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
-//
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+// SPDX-License-Identifier: GPL-2.0-or-later
 
 package monitor
 
@@ -60,11 +47,12 @@ type Recorder struct {
 func newRecorder(m *Monitor) *Recorder {
 	monitorID := m.Config.ID()
 	logf := func(level log.Level, format string, a ...interface{}) {
+		msg := fmt.Sprintf(format, a...)
 		m.Logger.Log(log.Entry{
 			Level:     level,
 			Src:       "recorder",
 			MonitorID: monitorID,
-			Msg:       fmt.Sprintf(format, a...),
+			Msg:       m.Env.CensorLog(msg),
 		})
 	}
 	return &Recorder{
@@ -153,7 +141,9 @@ func (r *Recorder) runRecordingSession(ctx context.Context) {
 	for {
 		err := r.runSession(ctx, r)
 		if err != nil {
-			r.logf(log.LevelError, "recording crashed: %v", err)
+			if !errors.Is(err, context.Canceled) {
+				r.logf(log.LevelError, "recording crashed: %v", err)
+			}
 			select {
 			case <-ctx.Done():
 				// Session is canceled.
@@ -182,7 +172,7 @@ func runRecording(ctx context.Context, r *Recorder) error {
 		return fmt.Errorf("parse timestamp offset %w", err)
 	}
 
-	muxer, err := r.input.HLSMuxer()
+	muxer, err := r.input.HLSMuxer(ctx)
 	if err != nil {
 		return fmt.Errorf("get muxer: %w", err)
 	}
@@ -220,15 +210,11 @@ func runRecording(ctx context.Context, r *Recorder) error {
 
 	r.logf(log.LevelInfo, "starting recording: %v", basePath)
 
-	info, err := r.input.StreamInfo(ctx)
-	if err != nil {
-		return fmt.Errorf("stream info: %w", err)
-	}
-
-	go r.generateThumbnail(filePath, firstSegment, *info)
+	info := *muxer.StreamInfo()
+	go r.generateThumbnail(filePath, firstSegment, info)
 
 	prevSeg, endTime, err := generateVideo(
-		ctx, filePath, muxer.NextSegment, firstSegment, *info, videoLength)
+		ctx, filePath, muxer.NextSegment, firstSegment, info, videoLength)
 	if err != nil {
 		return fmt.Errorf("write video: %w", err)
 	}
@@ -399,10 +385,14 @@ func (r *Recorder) saveRecording(
 	r.logf(log.LevelInfo, "recording saved: %v", filepath.Base(dataPath))
 }
 
-func (r *Recorder) sendEvent(event storage.Event) error {
+func (r *Recorder) sendEvent(ctx context.Context, event storage.Event) error {
 	if err := event.Validate(); err != nil {
 		return fmt.Errorf("invalid event: %w", err)
 	}
-	r.eventChan <- event
-	return nil
+	select {
+	case <-ctx.Done():
+		return context.Canceled
+	case r.eventChan <- event:
+		return nil
+	}
 }

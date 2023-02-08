@@ -1,17 +1,4 @@
-// Copyright 2020-2022 The OS-NVR Authors.
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation; either version 2 of the License, or
-// (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
-//
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+// SPDX-License-Identifier: GPL-2.0-or-later
 
 package monitor
 
@@ -86,19 +73,19 @@ func newTestRecorder(t *testing.T) *Recorder {
 }
 
 type mockMuxer struct {
-	streamInfo    *hls.StreamInfo
-	streamInfoErr error
-	segCount      int
+	streamInfo  *hls.StreamInfo
+	getMuxerErr error
+	segCount    int
 }
 
-func newMockMuxerFunc(muxer *mockMuxer) func() (video.IHLSMuxer, error) {
-	return func() (video.IHLSMuxer, error) {
-		return muxer, nil
+func newMockMuxerFunc(muxer *mockMuxer) func(context.Context) (video.IHLSMuxer, error) {
+	return func(ctx context.Context) (video.IHLSMuxer, error) {
+		return muxer, muxer.getMuxerErr
 	}
 }
 
-func (m *mockMuxer) StreamInfo() (*hls.StreamInfo, error) {
-	return m.streamInfo, m.streamInfoErr
+func (m *mockMuxer) StreamInfo() *hls.StreamInfo {
+	return m.streamInfo
 }
 
 func (m *mockMuxer) NextSegment(prevID uint64) (*hls.Segment, error) {
@@ -132,7 +119,7 @@ func TestStartRecorder(t *testing.T) {
 		r.runSession = mockRunRecording
 		go r.start(ctx)
 
-		err := r.sendEvent(storage.Event{
+		err := r.sendEvent(ctx, storage.Event{
 			Time:        time.Now().Add(time.Duration(-1) * time.Hour),
 			RecDuration: 1,
 		})

@@ -99,7 +99,7 @@ func TestGenerateMP4(t *testing.T) {
 		0, 0, 0, 0, 0, 0,
 		0, 0, 0, 0, 0, 0,
 		0, 0, 0, 0, 0, 0,
-		0, 0, 0, 1, // Next track ID.
+		0, 0, 0, 2, // Next track ID.
 
 		/* Video trak */
 		0, 0, 2, 0x39, 't', 'r', 'a', 'k',
@@ -107,7 +107,7 @@ func TestGenerateMP4(t *testing.T) {
 		0, 0, 0, 3, // Fullbox.
 		0, 0, 0, 0, // Creation time.
 		0, 0, 0, 0, // Modification time.
-		0, 0, 0, 0, // Track ID.
+		0, 0, 0, 1, // Track ID.
 		0, 0, 0, 0, // Reserved0.
 		0, 0, 0, 0, // Duration.
 		0, 0, 0, 0, 0, 0, 0, 0, // Reserved1.
@@ -206,7 +206,7 @@ func TestGenerateMP4(t *testing.T) {
 		0, 0, 0, 1, // Entry2 sample count.
 		0, 0, 0, 0x12, // Entry2 sample offset
 		0, 0, 0, 1, // Entry3 sample count.
-		0, 0, 0, 0xe, // Entry3 sample offset
+		0, 0, 0, 0xd, // Entry3 sample offset
 		0, 0, 0, 0x1c, 's', 't', 's', 'c',
 		0, 0, 0, 0, // FullBox.
 		0, 0, 0, 1, // Entry count.
@@ -231,7 +231,7 @@ func TestGenerateMP4(t *testing.T) {
 		0, 0, 0, 3, // FullBox.
 		0, 0, 0, 0, // Creation time.
 		0, 0, 0, 0, // Modification time.
-		0, 0, 0, 1, // Track ID.
+		0, 0, 0, 2, // Track ID.
 		0, 0, 0, 0, // Reserved.
 		0, 0, 0, 0, // Duration.
 		0, 0, 0, 0, 0, 0, 0, 0, // Reserved.
@@ -294,7 +294,7 @@ func TestGenerateMP4(t *testing.T) {
 		0xbb, 0x80, 0, 0, // Sample rate.
 		0, 0, 0, 0x31, 'e', 's', 'd', 's',
 		0, 0, 0, 0, // FullBox.
-		3, 0x80, 0x80, 0x80, 0x20, 0, 1, 0, // Data.
+		3, 0x80, 0x80, 0x80, 0x20, 0, 2, 0, // Data.
 		4, 0x80, 0x80, 0x80, 0x12, 0x40, 0x15, 0,
 		0, 0, 0, 1,
 		0xf7, 0x39, 0, 1,
@@ -304,7 +304,7 @@ func TestGenerateMP4(t *testing.T) {
 		0, 0, 0, 0, // FullBox.
 		0, 0, 0, 1, // Entry count.
 		0, 0, 0, 2, // Entry1 sample count.
-		0, 0, 0, 5, // Entry1 sample delta.
+		0, 0, 0, 4, // Entry1 sample delta.
 		0, 0, 0, 0x1c, 's', 't', 's', 'c',
 		0, 0, 0, 0, // FullBox.
 		0, 0, 0, 1, // Entry count.

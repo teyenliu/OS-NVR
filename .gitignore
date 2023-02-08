@@ -10,6 +10,7 @@
 *.swp
 *.backup
 /.vscode
+/new
 
 bundle/ffmpeg*
 bundle/nv-codec*
