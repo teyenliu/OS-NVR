@@ -2,6 +2,7 @@ package hls
 
 import (
 	"bytes"
+	"nvr/pkg/video/gortsplib"
 	"nvr/pkg/video/gortsplib/pkg/h264"
 	"time"
 )
@@ -20,21 +21,22 @@ func partDurationIsCompatible(partDuration time.Duration, sampleDuration time.Du
 	return partDuration > ((f * 85) / 100)
 }
 
+func partDurationIsCompatibleWithAll(partDuration time.Duration, sampleDurations map[time.Duration]struct{}) bool {
+	for sd := range sampleDurations {
+		if !partDurationIsCompatible(partDuration, sd) {
+			return false
+		}
+	}
+	return true
+}
+
 func findCompatiblePartDuration(
 	minPartDuration time.Duration,
 	sampleDurations map[time.Duration]struct{},
 ) time.Duration {
 	i := minPartDuration
 	for ; i < 5*time.Second; i += 5 * time.Millisecond {
-		isCompatible := func() bool {
-			for sd := range sampleDurations {
-				if !partDurationIsCompatible(i, sd) {
-					return false
-				}
-			}
-			return true
-		}()
-		if isCompatible {
+		if partDurationIsCompatibleWithAll(i, sampleDurations) {
 			break
 		}
 	}
@@ -45,10 +47,8 @@ type segmenter struct {
 	segmentDuration    time.Duration
 	partDuration       time.Duration
 	segmentMaxSize     uint64
-	videoTrackExist    bool
-	videoSps           videoSPSFunc
-	audioTrackExist    bool
-	audioClockRate     audioClockRateFunc
+	videoTrack         *gortsplib.TrackH264
+	audioTrack         *gortsplib.TrackMPEG4Audio
 	onSegmentFinalized func(*Segment)
 	onPartFinalized    func(*MuxerPart)
 
@@ -67,17 +67,13 @@ type segmenter struct {
 	adjustedPartDuration  time.Duration
 }
 
-type videoSPSFunc func() []byte
-
 func newSegmenter(
 	muxerStartTime int64,
 	segmentDuration time.Duration,
 	partDuration time.Duration,
 	segmentMaxSize uint64,
-	videoTrackExist bool,
-	videoSps videoSPSFunc,
-	audioTrackExist bool,
-	audioClockRate audioClockRateFunc,
+	videoTrack *gortsplib.TrackH264,
+	audioTrack *gortsplib.TrackMPEG4Audio,
 	onSegmentFinalized func(*Segment),
 	onPartFinalized func(*MuxerPart),
 ) *segmenter {
@@ -85,10 +81,8 @@ func newSegmenter(
 		segmentDuration:    segmentDuration,
 		partDuration:       partDuration,
 		segmentMaxSize:     segmentMaxSize,
-		videoTrackExist:    videoTrackExist,
-		videoSps:           videoSps,
-		audioTrackExist:    audioTrackExist,
-		audioClockRate:     audioClockRate,
+		videoTrack:         videoTrack,
+		audioTrack:         audioTrack,
 		onSegmentFinalized: onSegmentFinalized,
 		onPartFinalized:    onPartFinalized,
 		muxerStartTime:     muxerStartTime,
@@ -113,6 +107,11 @@ func (m *segmenter) genPartID() uint64 {
 // find a part duration that is compatible with all received sample durations.
 func (m *segmenter) adjustPartDuration(du time.Duration) {
 	if m.firstSegmentFinalized {
+		return
+	}
+
+	// Avoid a crash by skipping invalid durations.
+	if du == 0 {
 		return
 	}
 
@@ -155,7 +154,7 @@ func (m *segmenter) writeH264(ntp time.Time, pts time.Duration, nalus [][]byte) 
 
 		m.videoFirstIDRReceived = true
 		m.videoDTSExtractor = h264.NewDTSExtractor()
-		m.videoSPS = m.videoSps()
+		m.videoSPS = m.videoTrack.SPS
 
 		var err error
 		dts, err = m.videoDTSExtractor.Extract(nalus, dts)
@@ -202,9 +201,7 @@ func (m *segmenter) writeH264Entry(ntp time.Time, sample *VideoSample) error { /
 			time.Duration(sample.DTS-m.muxerStartTime),
 			m.muxerStartTime,
 			m.segmentMaxSize,
-			m.videoTrackExist,
-			m.audioTrackExist,
-			m.audioClockRate,
+			m.audioTrack,
 			m.genPartID,
 			m.onPartFinalized,
 		)
@@ -221,7 +218,7 @@ func (m *segmenter) writeH264Entry(ntp time.Time, sample *VideoSample) error { /
 		return nil
 	}
 	// switch segment
-	sps := m.videoSps()
+	sps := m.videoTrack.SPS
 	spsChanged := !bytes.Equal(m.videoSPS, sps)
 
 	if (time.Duration(sample.NextDTS-m.muxerStartTime)-
@@ -240,9 +237,7 @@ func (m *segmenter) writeH264Entry(ntp time.Time, sample *VideoSample) error { /
 			time.Duration(next.PTS-m.muxerStartTime),
 			m.muxerStartTime,
 			m.segmentMaxSize,
-			m.videoTrackExist,
-			m.audioTrackExist,
-			m.audioClockRate,
+			m.audioTrack,
 			m.genPartID,
 			m.onPartFinalized,
 		)
@@ -258,23 +253,20 @@ func (m *segmenter) writeH264Entry(ntp time.Time, sample *VideoSample) error { /
 	return nil
 }
 
-func (m *segmenter) writeAAC(ntp time.Time, pts time.Duration, au []byte) error {
-	return m.writeAACEntry(ntp, &AudioSample{
+func (m *segmenter) writeAAC(pts time.Duration, au []byte) error {
+	return m.writeAACEntry(&AudioSample{
 		PTS: int64(pts),
 		AU:  au,
 	})
 }
 
-func (m *segmenter) writeAACEntry(ntp time.Time, sample *AudioSample) error { //nolint:funlen
-	if m.videoTrackExist {
-		// wait for the video track
-		if !m.videoFirstIDRReceived {
-			return nil
-		}
-
-		sample.PTS -= int64(m.startDTS)
+func (m *segmenter) writeAACEntry(sample *AudioSample) error {
+	// wait for the video track
+	if !m.videoFirstIDRReceived {
+		return nil
 	}
 
+	sample.PTS -= int64(m.startDTS)
 	sample.PTS += m.muxerStartTime
 
 	// put samples into a queue in order to
@@ -286,58 +278,14 @@ func (m *segmenter) writeAACEntry(ntp time.Time, sample *AudioSample) error { //
 
 	sample.NextPTS = m.nextAudioSample.PTS
 
-	if !m.videoTrackExist {
-		if m.currentSegment == nil {
-			// create first segment
-			m.currentSegment = newSegment(
-				m.genSegmentID(),
-				ntp,
-				time.Duration(sample.PTS),
-				m.muxerStartTime,
-				m.segmentMaxSize,
-				m.videoTrackExist,
-				m.audioTrackExist,
-				m.audioClockRate,
-				m.genPartID,
-				m.onPartFinalized,
-			)
-		}
-	} else {
-		// wait for the video track
-		if m.currentSegment == nil {
-			return nil
-		}
+	// wait for the video track
+	if m.currentSegment == nil {
+		return nil
 	}
 
 	err := m.currentSegment.writeAAC(sample)
 	if err != nil {
 		return err
-	}
-
-	// switch segment
-	if !m.videoTrackExist &&
-		(time.Duration(sample.NextPTS-m.muxerStartTime)-
-			m.currentSegment.startDTS) >= m.segmentDuration {
-		err := m.currentSegment.finalize(nil)
-		if err != nil {
-			return nil
-		}
-		m.onSegmentFinalized(m.currentSegment)
-
-		m.firstSegmentFinalized = true
-
-		m.currentSegment = newSegment(
-			m.genSegmentID(),
-			ntp,
-			time.Duration(sample.NextPTS),
-			m.muxerStartTime,
-			m.segmentMaxSize,
-			m.videoTrackExist,
-			m.audioTrackExist,
-			m.audioClockRate,
-			m.genPartID,
-			m.onPartFinalized,
-		)
 	}
 
 	return nil
