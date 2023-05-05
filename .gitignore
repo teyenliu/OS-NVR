@@ -17,3 +17,4 @@ bundle/nv-codec*
 bundle/go*
 bundle/nvr
 bundle/web
+bundle/*.yaml
