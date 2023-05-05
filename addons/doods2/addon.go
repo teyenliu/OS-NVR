@@ -15,6 +15,7 @@ import (
 	"nvr/pkg/storage"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -24,6 +25,7 @@ import (
 var addon = struct {
 	doodsIP      string
 	detectorList detectors
+	previewCache *previewCache
 
 	sendRequest sendRequestFunc
 
@@ -32,11 +34,13 @@ var addon = struct {
 
 func init() {
 	nvr.RegisterLogSource([]string{"doods"})
+	addon.previewCache = newPreviewCache()
 
 	nvr.RegisterAppRunHook(func(ctx context.Context, app *nvr.App) error {
 		addon.logger = app.Logger
 		onEnv(app.Env)
 		app.Router.Handle("/doods.mjs", app.Auth.Admin(serveDoodsMjs()))
+		app.Router.Handle("/api/doods/preview/", app.Auth.Admin(addon.previewCache))
 		onAppRun(ctx, app.WG)
 		return nil
 	})
@@ -309,7 +313,7 @@ func (c *client) run() error {
 			}
 
 			if response.ServerError != "" {
-				c.logf(log.LevelError, "server: %v", err)
+				c.logf(log.LevelError, "server: %v", response.ServerError)
 			}
 
 			if response.ID == "" {
@@ -386,4 +390,39 @@ func dirExist(path string) bool {
 		return false
 	}
 	return true
+}
+
+type previewCache struct {
+	monitors map[string][]byte
+	mu       *sync.Mutex
+}
+
+func newPreviewCache() *previewCache {
+	return &previewCache{monitors: make(map[string][]byte), mu: &sync.Mutex{}}
+}
+
+func (cache *previewCache) Set(monitorID string, buf []byte) {
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+
+	cache.monitors[monitorID] = buf
+}
+
+// ServeHTTP Implements http.Handler.
+func (cache *previewCache) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+
+	monitorID := strings.TrimPrefix(r.URL.Path, "/api/doods/preview/")
+
+	buf, exist := cache.monitors[monitorID]
+	if !exist {
+		http.Error(w, "", http.StatusNotFound)
+		return
+	}
+
+	_, err := w.Write(buf)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }

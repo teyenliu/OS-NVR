@@ -16,9 +16,7 @@ import (
 	"nvr/pkg/monitor"
 	"nvr/pkg/storage"
 	"nvr/pkg/video/gortsplib/pkg/h264"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"sync"
 	"time"
@@ -100,22 +98,16 @@ func start(
 		return fmt.Errorf("calculate ffmpeg outputs: %w", err)
 	}
 
-	i := newInstance(addon.sendRequest, input, config, logf)
+	i := newInstance(addon.sendRequest, input, config, addon.previewCache, logf)
 
 	i.outputs = *outputs
 	i.reverseValues = *reverseValues
-
-	maskPath, err := i.generateMask(config.mask)
-	if err != nil {
-		return fmt.Errorf("generate mask: %w", err)
-	}
 
 	i.ffArgs = generateFFmpegArgs(
 		*outputs,
 		config,
 		input.RTSPprotocol(),
 		input.RTSPaddress(),
-		maskPath,
 	)
 
 	i.wg.Add(1)
@@ -135,10 +127,11 @@ type instance struct {
 	ffArgs        []string
 	reverseValues reverseValues
 
-	newProcess  ffmpeg.NewProcessFunc
-	startReader startReaderFunc
-	sendRequest sendRequestFunc
-	encoder     png.Encoder
+	newProcess   ffmpeg.NewProcessFunc
+	startReader  startReaderFunc
+	sendRequest  sendRequestFunc
+	encoder      png.Encoder
+	previewCache *previewCache
 
 	// watchdogTimer restarts process if it stops outputting frames.
 	watchdogTimer *time.Timer
@@ -148,6 +141,7 @@ func newInstance(
 	sendRequest sendRequestFunc,
 	i *monitor.InputProcess,
 	c config,
+	previewCache *previewCache,
 	logf log.Func,
 ) *instance {
 	return &instance{
@@ -160,10 +154,10 @@ func newInstance(
 		newProcess:  ffmpeg.NewProcess,
 		startReader: startReader,
 		sendRequest: sendRequest,
-
 		encoder: png.Encoder{
 			CompressionLevel: png.BestSpeed,
 		},
+		previewCache: previewCache,
 	}
 }
 
@@ -266,38 +260,11 @@ func calculateOutputs(c config, i inputs) (*outputs, *reverseValues, error) { //
 		}, nil
 }
 
-func (i *instance) generateMask(m mask) (string, error) {
-	if !m.Enable {
-		return "", nil
-	}
-
-	w := i.outputs.scaledWidth
-	h := i.outputs.scaledHeight
-
-	tempDir := filepath.Join(i.env.TempDir, "doods")
-	err := os.MkdirAll(tempDir, 0o700)
-	if err != nil && !errors.Is(err, os.ErrExist) {
-		return "", fmt.Errorf("make temporary directory: %v: %w", tempDir, err)
-	}
-
-	maskPath := filepath.Join(tempDir, i.c.monitorID+"_mask.png")
-
-	polygon := m.Area.ToAbs(w, h)
-	mask := ffmpeg.CreateMask(w, h, polygon)
-
-	if err := ffmpeg.SaveImage(maskPath, mask); err != nil {
-		return "", fmt.Errorf("save mask: %w", err)
-	}
-
-	return maskPath, nil
-}
-
 func generateFFmpegArgs(
 	out outputs,
 	c config,
 	rtspProtocol string,
 	rtspAddress string,
-	maskPath string,
 ) []string {
 	// Output minimal
 	// ffmpeg -rtsp_transport tcp -i rtsp://x -filter
@@ -305,14 +272,12 @@ func generateFFmpegArgs(
 	//   -f rawvideo -pix_fmt rgb24 -
 	//
 	// Output maximal
-	// ffmpeg -hwaccel x -rtsp_transport tcp -i rtsp://x -i mask.png -filter_complex
-	//   '[0:v]fps=fps=3,scale=320:260[bg];
-	//     [bg][1:v]overlay,pad=320:320:0:0,crop:300:300:10:10,hue=s=0'
+	// ffmpeg -hwaccel x -rtsp_transport tcp -i rtsp://x -filter
+	//   'fps=fps=3,scale=320:260,pad=320:320:0:0,crop:300:300:10:10,hue=s=0'
 	//   -f rawvideo -pix_fmt rgb24 -
 	//
 	// Padding is done after scaling for higher efficiency.
 	// Cropping must come after padding.
-	// Mask is overlayed on scaled frame.
 
 	fps := strconv.FormatFloat(c.feedRate, 'f', -1, 64)
 	scaledWidth := strconv.Itoa(out.scaledWidth)
@@ -343,14 +308,8 @@ func generateFFmpegArgs(
 		filter += ",hue=s=0"
 	}
 
-	if maskPath == "" {
-		args = append(args,
-			"-filter", "fps=fps="+fps+",scale="+scaledWidth+":"+scaledHeight+filter)
-	} else {
-		args = append(args,
-			"-i", maskPath, "-filter_complex",
-			"[0:v]fps=fps="+fps+",scale="+scaledWidth+":"+scaledHeight+"[bg];[bg][1:v]overlay"+filter)
-	}
+	args = append(args,
+		"-filter", "fps=fps="+fps+",scale="+scaledWidth+":"+scaledHeight+filter)
 
 	args = append(args,
 		"-f", "rawvideo", "-pix_fmt", "rgb24", "-")
@@ -459,6 +418,7 @@ func (i *instance) runReader(ctx context.Context, stdout io.Reader) error {
 			return fmt.Errorf("encode frame: %w", err)
 		}
 		outputBuffer = b.Bytes()
+		i.previewCache.Set(i.c.monitorID, outputBuffer)
 
 		request := detectRequest{
 			DetectorName: i.c.detectorName,
@@ -474,7 +434,7 @@ func (i *instance) runReader(ctx context.Context, stdout io.Reader) error {
 			return fmt.Errorf("send frame: %w", err)
 		}
 
-		parsed := parseDetections(i.reverseValues, *detections)
+		parsed := parseDetections(i.c.mask.Area, i.reverseValues, *detections)
 		if len(parsed) == 0 {
 			continue
 		}
@@ -494,7 +454,7 @@ func (i *instance) runReader(ctx context.Context, stdout io.Reader) error {
 	}
 }
 
-func parseDetections(reverse reverseValues, detections detections) []storage.Detection {
+func parseDetections(mask ffmpeg.Polygon, reverse reverseValues, detections detections) []storage.Detection {
 	parsed := []storage.Detection{}
 
 	for _, detection := range detections {
@@ -510,16 +470,27 @@ func parseDetections(reverse reverseValues, detections detections) []storage.Det
 				reverse.paddingYmultiplier * 100)
 		}
 
+		top := convY(detection.Top)
+		left := convX(detection.Left)
+		bottom := convY(detection.Bottom)
+		right := convX(detection.Right)
+
+		height := bottom - top
+		width := right - left
+
+		centerY := top + (height / 2)
+		centerX := left + (width / 2)
+
+		centerInsideMask := ffmpeg.VertexInsidePoly(centerY, centerX, mask)
+		if centerInsideMask {
+			continue
+		}
+
 		d := storage.Detection{
 			Label: label,
 			Score: score,
 			Region: &storage.Region{
-				Rect: &ffmpeg.Rect{
-					convY(detection.Top),
-					convX(detection.Left),
-					convY(detection.Bottom),
-					convX(detection.Right),
-				},
+				Rect: &ffmpeg.Rect{top, left, bottom, right},
 			},
 		}
 		parsed = append(parsed, d)
